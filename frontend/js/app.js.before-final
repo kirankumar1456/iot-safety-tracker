@@ -1,0 +1,1848 @@
+const API_BASE = "/api";
+
+let map;
+let fullMap;
+
+let markers = {};
+let fullMapMarkers = {};
+
+
+// ======================================================
+// INITIALIZE DASHBOARD MAP
+// ======================================================
+
+function initializeMap() {
+
+    const mapElement = document.getElementById("map");
+
+    if (!mapElement) {
+        return;
+    }
+
+    if (map) {
+        map.invalidateSize();
+        return;
+    }
+
+    map = L.map("map").setView(
+        [22.3072, 73.1812],
+        13
+    );
+
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution:
+                "&copy; OpenStreetMap contributors"
+        }
+    ).addTo(map);
+}
+
+
+// ======================================================
+// INITIALIZE FULL LIVE MAP
+// ======================================================
+
+function initializeFullMap() {
+
+    const mapElement =
+        document.getElementById("full-map");
+
+    if (!mapElement) {
+        return;
+    }
+
+    if (fullMap) {
+        setTimeout(() => {
+            fullMap.invalidateSize();
+        }, 100);
+
+        return;
+    }
+
+    fullMap = L.map("full-map").setView(
+        [22.3072, 73.1812],
+        13
+    );
+
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution:
+                "&copy; OpenStreetMap contributors"
+        }
+    ).addTo(fullMap);
+}
+
+
+// ======================================================
+// LOAD TRACKERS
+// ======================================================
+
+async function loadTrackers() {
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE}/trackers`
+        );
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Failed to load trackers"
+            );
+        }
+
+        const trackers =
+            await response.json();
+
+        updateTrackerStats(trackers);
+
+        displayTrackers(trackers);
+
+        updateMap(trackers);
+
+        // Update full live map if initialized
+        if (fullMap) {
+            updateFullMap(trackers);
+        }
+
+        // Update tracker management page
+        displayTrackerManagement(
+            trackers
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Tracker loading error:",
+            error
+        );
+    }
+}
+
+
+// ======================================================
+// UPDATE TRACKER STATISTICS
+// ======================================================
+
+function updateTrackerStats(trackers) {
+
+    const total =
+        trackers.length;
+
+    const online =
+        trackers.filter(
+            tracker =>
+                tracker.status === "online"
+        ).length;
+
+    const batteries =
+        trackers
+            .map(
+                tracker =>
+                    Number(tracker.battery)
+            )
+            .filter(
+                battery =>
+                    !Number.isNaN(battery)
+            );
+
+    let averageBattery = 0;
+
+    if (batteries.length > 0) {
+
+        averageBattery =
+            batteries.reduce(
+                (sum, battery) =>
+                    sum + battery,
+                0
+            ) / batteries.length;
+    }
+
+    const totalElement =
+        document.getElementById(
+            "total-trackers"
+        );
+
+    const onlineElement =
+        document.getElementById(
+            "online-trackers"
+        );
+
+    const batteryElement =
+        document.getElementById(
+            "average-battery"
+        );
+
+    if (totalElement) {
+        totalElement.textContent =
+            total;
+    }
+
+    if (onlineElement) {
+        onlineElement.textContent =
+            online;
+    }
+
+    if (batteryElement) {
+
+        batteryElement.textContent =
+            `${Math.round(
+                averageBattery
+            )}%`;
+    }
+}
+
+
+// ======================================================
+// DISPLAY DASHBOARD TRACKERS
+// ======================================================
+
+function displayTrackers(trackers) {
+
+    const container =
+        document.getElementById(
+            "tracker-list"
+        );
+
+    if (!container) {
+        return;
+    }
+
+    if (trackers.length === 0) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No trackers available
+            </div>
+        `;
+
+        return;
+    }
+
+    container.innerHTML = "";
+
+    trackers.forEach(
+        tracker => {
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+            item.className =
+                "tracker-item";
+
+            item.innerHTML = `
+
+                <div class="tracker-name">
+
+                    <strong>
+                        ${escapeHtml(
+                            tracker.name
+                        )}
+                    </strong>
+
+                    <span>
+                        ${
+                            tracker.status ===
+                            "online"
+                                ? "🟢"
+                                : "⚪"
+                        }
+                    </span>
+
+                </div>
+
+                <div class="tracker-device">
+
+                    ${escapeHtml(
+                        tracker.device_id
+                    )}
+
+                </div>
+
+                <div class="tracker-status">
+
+                    <div class="status-item">
+
+                        <span>Battery</span>
+
+                        <strong>
+                            ${tracker.battery ?? 0}%
+                        </strong>
+
+                    </div>
+
+                    <div class="status-item">
+
+                        <span>GPS</span>
+
+                        <strong>
+                            ${escapeHtml(
+                                tracker.gps_status ||
+                                "unknown"
+                            )}
+                        </strong>
+
+                    </div>
+
+                    <div class="status-item">
+
+                        <span>Network</span>
+
+                        <strong>
+                            ${escapeHtml(
+                                tracker.wifi_status ||
+                                "unknown"
+                            )}
+                        </strong>
+
+                    </div>
+
+                    <div class="status-item">
+
+                        <span>Assigned</span>
+
+                        <strong>
+                            ${escapeHtml(
+                                tracker.assigned_person ||
+                                "Unassigned"
+                            )}
+                        </strong>
+
+                    </div>
+
+                </div>
+            `;
+
+            container.appendChild(
+                item
+            );
+        }
+    );
+}
+
+
+// ======================================================
+// DISPLAY TRACKER MANAGEMENT PAGE
+// ======================================================
+
+function displayTrackerManagement(
+    trackers
+) {
+
+    const container =
+        document.getElementById(
+            "tracker-management-list"
+        );
+
+    if (!container) {
+        return;
+    }
+
+    if (!trackers ||
+        trackers.length === 0) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No trackers available
+            </div>
+        `;
+
+        return;
+    }
+
+    container.innerHTML = "";
+
+    trackers.forEach(
+        tracker => {
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+            item.className =
+                "tracker-item";
+
+            item.innerHTML = `
+
+                <div class="tracker-name">
+
+                    <strong>
+                        ${escapeHtml(
+                            tracker.name
+                        )}
+                    </strong>
+
+                    <span>
+
+                        ${
+                            tracker.status ===
+                            "online"
+                                ? "🟢 Online"
+                                : "⚪ Offline"
+                        }
+
+                    </span>
+
+                </div>
+
+                <div class="tracker-device">
+
+                    Device ID:
+                    ${escapeHtml(
+                        tracker.device_id
+                    )}
+
+                </div>
+
+                <div class="tracker-status">
+
+                    <div class="status-item">
+
+                        <span>Battery</span>
+
+                        <strong>
+                            ${tracker.battery ?? 0}%
+                        </strong>
+
+                    </div>
+
+                    <div class="status-item">
+
+                        <span>GPS</span>
+
+                        <strong>
+                            ${escapeHtml(
+                                tracker.gps_status ||
+                                "unknown"
+                            )}
+                        </strong>
+
+                    </div>
+
+                    <div class="status-item">
+
+                        <span>Network</span>
+
+                        <strong>
+                            ${escapeHtml(
+                                tracker.wifi_status ||
+                                "unknown"
+                            )}
+                        </strong>
+
+                    </div>
+
+                    <div class="status-item">
+
+                        <span>Assigned Person</span>
+
+                        <strong>
+                            ${escapeHtml(
+                                tracker.assigned_person ||
+                                "Unassigned"
+                            )}
+                        </strong>
+
+                    </div>
+
+                </div>
+            `;
+
+            container.appendChild(
+                item
+            );
+        }
+    );
+}
+
+
+// ======================================================
+// UPDATE DASHBOARD MAP
+// ======================================================
+
+async function updateMap(trackers) {
+
+    if (!map) {
+        return;
+    }
+
+    let firstLocation = null;
+
+    for (const tracker of trackers) {
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_BASE}/telemetry/${encodeURIComponent(
+                        tracker.device_id
+                    )}`
+                );
+
+            if (!response.ok) {
+                continue;
+            }
+
+            const telemetry =
+                await response.json();
+
+            if (
+                !telemetry ||
+                telemetry.length === 0
+            ) {
+                continue;
+            }
+
+            const latest =
+                telemetry[0];
+
+            if (
+                latest.latitude === null ||
+                latest.longitude === null ||
+                latest.latitude === undefined ||
+                latest.longitude === undefined
+            ) {
+                continue;
+            }
+
+            const latitude =
+                Number(
+                    latest.latitude
+                );
+
+            const longitude =
+                Number(
+                    latest.longitude
+                );
+
+            if (
+                Number.isNaN(latitude) ||
+                Number.isNaN(longitude)
+            ) {
+                continue;
+            }
+
+            if (!firstLocation) {
+
+                firstLocation = [
+                    latitude,
+                    longitude
+                ];
+            }
+
+            const popup = `
+
+                <strong>
+                    ${escapeHtml(
+                        tracker.name
+                    )}
+                </strong>
+
+                <br>
+
+                Device:
+                ${escapeHtml(
+                    tracker.device_id
+                )}
+
+                <br>
+
+                Battery:
+                ${tracker.battery ?? 0}%
+
+                <br>
+
+                GPS:
+                ${escapeHtml(
+                    tracker.gps_status ||
+                    "unknown"
+                )}
+
+                <br>
+
+                Network:
+                ${escapeHtml(
+                    tracker.wifi_status ||
+                    "unknown"
+                )}
+
+            `;
+
+            if (
+                markers[
+                    tracker.device_id
+                ]
+            ) {
+
+                markers[
+                    tracker.device_id
+                ].setLatLng([
+                    latitude,
+                    longitude
+                ]);
+
+                markers[
+                    tracker.device_id
+                ].bindPopup(
+                    popup
+                );
+
+            } else {
+
+                markers[
+                    tracker.device_id
+                ] =
+                    L.marker([
+                        latitude,
+                        longitude
+                    ])
+                    .addTo(map)
+                    .bindPopup(
+                        popup
+                    );
+            }
+
+        } catch (error) {
+
+            console.error(
+                `Map telemetry error for ${tracker.device_id}:`,
+                error
+            );
+        }
+    }
+
+    if (firstLocation) {
+
+        map.setView(
+            firstLocation,
+            15
+        );
+    }
+}
+
+
+// ======================================================
+// UPDATE FULL LIVE MAP
+// ======================================================
+
+async function updateFullMap(
+    trackers
+) {
+
+    if (!fullMap) {
+        return;
+    }
+
+    const locations = [];
+
+    for (const tracker of trackers) {
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_BASE}/telemetry/${encodeURIComponent(
+                        tracker.device_id
+                    )}`
+                );
+
+            if (!response.ok) {
+                continue;
+            }
+
+            const telemetry =
+                await response.json();
+
+            if (
+                !telemetry ||
+                telemetry.length === 0
+            ) {
+                continue;
+            }
+
+            const latest =
+                telemetry[0];
+
+            if (
+                latest.latitude === null ||
+                latest.longitude === null ||
+                latest.latitude === undefined ||
+                latest.longitude === undefined
+            ) {
+                continue;
+            }
+
+            const latitude =
+                Number(
+                    latest.latitude
+                );
+
+            const longitude =
+                Number(
+                    latest.longitude
+                );
+
+            if (
+                Number.isNaN(latitude) ||
+                Number.isNaN(longitude)
+            ) {
+                continue;
+            }
+
+            locations.push([
+                latitude,
+                longitude
+            ]);
+
+            const statusIcon =
+                tracker.status === "online"
+                    ? "🟢"
+                    : "⚪";
+
+            const popup = `
+
+                <div style="min-width:220px">
+
+                    <strong
+                        style="font-size:15px"
+                    >
+                        ${escapeHtml(
+                            tracker.name
+                        )}
+                    </strong>
+
+                    <br><br>
+
+                    <strong>
+                        Device:
+                    </strong>
+
+                    ${escapeHtml(
+                        tracker.device_id
+                    )}
+
+                    <br>
+
+                    <strong>
+                        Status:
+                    </strong>
+
+                    ${statusIcon}
+
+                    ${escapeHtml(
+                        tracker.status ||
+                        "unknown"
+                    )}
+
+                    <br>
+
+                    <strong>
+                        Battery:
+                    </strong>
+
+                    ${tracker.battery ?? 0}%
+
+                    <br>
+
+                    <strong>
+                        GPS:
+                    </strong>
+
+                    ${escapeHtml(
+                        tracker.gps_status ||
+                        "unknown"
+                    )}
+
+                    <br>
+
+                    <strong>
+                        Network:
+                    </strong>
+
+                    ${escapeHtml(
+                        tracker.wifi_status ||
+                        "unknown"
+                    )}
+
+                    <br><br>
+
+                    <strong>
+                        Latitude:
+                    </strong>
+
+                    ${latitude.toFixed(6)}
+
+                    <br>
+
+                    <strong>
+                        Longitude:
+                    </strong>
+
+                    ${longitude.toFixed(6)}
+
+                </div>
+
+            `;
+
+            if (
+                fullMapMarkers[
+                    tracker.device_id
+                ]
+            ) {
+
+                fullMapMarkers[
+                    tracker.device_id
+                ].setLatLng([
+                    latitude,
+                    longitude
+                ]);
+
+                fullMapMarkers[
+                    tracker.device_id
+                ].bindPopup(
+                    popup
+                );
+
+            } else {
+
+                fullMapMarkers[
+                    tracker.device_id
+                ] =
+                    L.marker([
+                        latitude,
+                        longitude
+                    ])
+                    .addTo(fullMap)
+                    .bindPopup(
+                        popup
+                    );
+            }
+
+        } catch (error) {
+
+            console.error(
+                `Full map telemetry error for ${tracker.device_id}:`,
+                error
+            );
+        }
+    }
+
+    if (locations.length > 0) {
+
+        const bounds =
+            L.latLngBounds(
+                locations
+            );
+
+        fullMap.fitBounds(
+            bounds,
+            {
+                padding: [
+                    40,
+                    40
+                ],
+                maxZoom: 15
+            }
+        );
+    }
+}
+
+
+// ======================================================
+// LOAD ALERTS
+// ======================================================
+
+async function loadAlerts() {
+
+    try {
+
+        const response =
+            await fetch(
+                `${API_BASE}/alerts`
+            );
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Failed to load alerts"
+            );
+        }
+
+        const alerts =
+            await response.json();
+
+        displayAlerts(alerts);
+
+        displayAllAlerts(alerts);
+
+        updateAlertCount(alerts);
+
+    } catch (error) {
+
+        console.error(
+            "Alert loading error:",
+            error
+        );
+    }
+}
+
+
+// ======================================================
+// DISPLAY DASHBOARD ALERTS
+// ======================================================
+
+function displayAlerts(alerts) {
+
+    const container =
+        document.getElementById(
+            "alerts-list"
+        );
+
+    if (!container) {
+        return;
+    }
+
+    if (
+        !alerts ||
+        alerts.length === 0
+    ) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No alerts
+            </div>
+        `;
+
+        return;
+    }
+
+    container.innerHTML = "";
+
+    alerts
+        .slice(0, 10)
+        .forEach(
+            alert => {
+
+                const item =
+                    document.createElement(
+                        "div"
+                    );
+
+                item.className =
+                    "alert-item";
+
+                const resolvedClass =
+                    alert.status ===
+                    "resolved"
+                        ? "resolved"
+                        : "";
+
+                item.innerHTML = `
+
+                    <div class="alert-info">
+
+                        <div
+                            class="alert-icon-small"
+                        >
+                            ⚠
+                        </div>
+
+                        <div>
+
+                            <div
+                                class="alert-title"
+                            >
+                                ${escapeHtml(
+                                    alert.alert_type
+                                )}
+                            </div>
+
+                            <div
+                                class="alert-description"
+                            >
+                                ${escapeHtml(
+                                    alert.message
+                                )}
+
+                                —
+
+                                ${escapeHtml(
+                                    alert.device_id
+                                )}
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <span
+                        class="alert-status ${resolvedClass}"
+                    >
+                        ${escapeHtml(
+                            alert.status
+                        )}
+                    </span>
+
+                `;
+
+                container.appendChild(
+                    item
+                );
+            }
+        );
+}
+
+
+// ======================================================
+// DISPLAY ALL ALERTS
+// ======================================================
+
+function displayAllAlerts(
+    alerts
+) {
+
+    const container =
+        document.getElementById(
+            "all-alerts-list"
+        );
+
+    if (!container) {
+        return;
+    }
+
+    if (
+        !alerts ||
+        alerts.length === 0
+    ) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No alerts
+            </div>
+        `;
+
+        return;
+    }
+
+    container.innerHTML = "";
+
+    alerts.forEach(
+        alert => {
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+            item.className =
+                "alert-item";
+
+            const resolvedClass =
+                alert.status ===
+                "resolved"
+                    ? "resolved"
+                    : "";
+
+            item.innerHTML = `
+
+                <div class="alert-info">
+
+                    <div
+                        class="alert-icon-small"
+                    >
+                        ⚠
+                    </div>
+
+                    <div>
+
+                        <div
+                            class="alert-title"
+                        >
+                            ${escapeHtml(
+                                alert.alert_type
+                            )}
+                        </div>
+
+                        <div
+                            class="alert-description"
+                        >
+                            ${escapeHtml(
+                                alert.message
+                            )}
+
+                            —
+
+                            ${escapeHtml(
+                                alert.device_id
+                            )}
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <span
+                    class="alert-status ${resolvedClass}"
+                >
+                    ${escapeHtml(
+                        alert.status
+                    )}
+                </span>
+
+            `;
+
+            container.appendChild(
+                item
+            );
+        }
+    );
+}
+
+
+// ======================================================
+// UPDATE ALERT COUNT
+// ======================================================
+
+function updateAlertCount(
+    alerts
+) {
+
+    const activeAlerts =
+        alerts.filter(
+            alert =>
+                alert.status ===
+                "active"
+        ).length;
+
+    const element =
+        document.getElementById(
+            "active-alerts"
+        );
+
+    if (element) {
+
+        element.textContent =
+            activeAlerts;
+    }
+}
+
+
+// ======================================================
+// HTML ESCAPE
+// ======================================================
+
+function escapeHtml(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+    return String(value)
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+}
+
+
+// ======================================================
+// PAGE NAVIGATION
+// ======================================================
+// ======================================================
+// HISTORY - LOAD TRACKERS
+// ======================================================
+
+async function loadHistoryTrackers() {
+
+    const container =
+        document.getElementById("history-list");
+
+    if (!container) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE}/trackers`
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Failed to load trackers"
+            );
+        }
+
+        const trackers = await response.json();
+
+        if (!trackers || trackers.length === 0) {
+
+            container.innerHTML = `
+                <div class="empty-state">
+                    No trackers available.
+                </div>
+            `;
+
+            return;
+        }
+
+        let html = `
+            <div class="history-controls">
+
+                <label for="history-tracker-select">
+                    Select Tracker
+                </label>
+
+                <select id="history-tracker-select">
+
+                    <option value="">
+                        Select a tracker
+                    </option>
+        `;
+
+        trackers.forEach(tracker => {
+
+            html += `
+                <option value="${escapeHtml(
+                    tracker.device_id
+                )}">
+                    ${escapeHtml(
+                        tracker.name ||
+                        tracker.device_id
+                    )}
+                    -
+                    ${escapeHtml(
+                        tracker.device_id
+                    )}
+                </option>
+            `;
+
+        });
+
+        html += `
+                </select>
+
+                <button
+                    type="button"
+                    class="refresh-button"
+                    id="history-refresh-button"
+                >
+                    Refresh
+                </button>
+
+            </div>
+
+            <div id="history-table-container">
+
+                <div class="empty-state">
+                    Select a tracker to view telemetry history.
+                </div>
+
+            </div>
+        `;
+
+        container.innerHTML = html;
+
+        const selector =
+            document.getElementById(
+                "history-tracker-select"
+            );
+
+        if (selector) {
+
+            selector.addEventListener(
+                "change",
+                () => {
+
+                    if (selector.value) {
+
+                        loadHistory(
+                            selector.value
+                        );
+
+                    } else {
+
+                        const tableContainer =
+                            document.getElementById(
+                                "history-table-container"
+                            );
+
+                        if (tableContainer) {
+
+                            tableContainer.innerHTML = `
+                                <div class="empty-state">
+                                    Select a tracker to view telemetry history.
+                                </div>
+                            `;
+
+                        }
+
+                    }
+
+                }
+            );
+
+        }
+
+        const refreshButton =
+            document.getElementById(
+                "history-refresh-button"
+            );
+
+        if (refreshButton) {
+
+            refreshButton.addEventListener(
+                "click",
+                loadHistoryTrackers
+            );
+
+        }
+
+    } catch (error) {
+
+        console.error(
+            "History tracker loading error:",
+            error
+        );
+
+        container.innerHTML = `
+            <div class="empty-state">
+                Failed to load trackers.
+            </div>
+        `;
+
+    }
+}
+
+
+// ======================================================
+// HISTORY - LOAD TELEMETRY
+// ======================================================
+
+async function loadHistory(deviceId) {
+
+    const container =
+        document.getElementById(
+            "history-table-container"
+        );
+
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="empty-state">
+            Loading telemetry history...
+        </div>
+    `;
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE}/telemetry/${encodeURIComponent(
+                deviceId
+            )}`
+        );
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Failed to load telemetry"
+            );
+
+        }
+
+        const telemetry =
+            await response.json();
+
+        if (
+            !telemetry ||
+            telemetry.length === 0
+        ) {
+
+            container.innerHTML = `
+                <div class="empty-state">
+                    No telemetry records found
+                    for this tracker.
+                </div>
+            `;
+
+            return;
+        }
+
+        let html = `
+            <div class="history-table-wrapper">
+
+                <table class="history-table">
+
+                    <thead>
+                        <tr>
+                            <th>Date / Time</th>
+                            <th>Latitude</th>
+                            <th>Longitude</th>
+                            <th>Accuracy</th>
+                            <th>Battery</th>
+                            <th>GPS</th>
+                            <th>Wi-Fi</th>
+                            <th>SOS</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+        `;
+
+        telemetry.forEach(record => {
+
+            const latitude =
+                record.latitude !== null &&
+                record.latitude !== undefined
+                    ? Number(
+                        record.latitude
+                    ).toFixed(6)
+                    : "N/A";
+
+            const longitude =
+                record.longitude !== null &&
+                record.longitude !== undefined
+                    ? Number(
+                        record.longitude
+                    ).toFixed(6)
+                    : "N/A";
+
+            const accuracy =
+                record.accuracy !== null &&
+                record.accuracy !== undefined
+                    ? `${Number(
+                        record.accuracy
+                    ).toFixed(1)} m`
+                    : "N/A";
+
+            const battery =
+                record.battery !== null &&
+                record.battery !== undefined
+                    ? `${Number(
+                        record.battery
+                    ).toFixed(0)}%`
+                    : "N/A";
+
+            html += `
+                <tr>
+
+                    <td>
+                        ${escapeHtml(
+                            formatTelemetryTimestamp(
+                                record.timestamp
+                            )
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(
+                            latitude
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(
+                            longitude
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(
+                            accuracy
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(
+                            battery
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(
+                            record.gps_status ||
+                            "unknown"
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(
+                            record.wifi_status ||
+                            "unknown"
+                        )}
+                    </td>
+
+                    <td>
+                        ${
+                            record.sos
+                                ? "🚨 YES"
+                                : "No"
+                        }
+                    </td>
+
+                </tr>
+            `;
+
+        });
+
+        html += `
+                    </tbody>
+
+                </table>
+
+            </div>
+
+            <div class="history-record-count">
+
+                Showing
+                ${telemetry.length}
+                telemetry record${
+                    telemetry.length === 1
+                        ? ""
+                        : "s"
+                }
+
+            </div>
+        `;
+
+        container.innerHTML = html;
+
+    } catch (error) {
+
+        console.error(
+            "Telemetry history error:",
+            error
+        );
+
+        container.innerHTML = `
+            <div class="empty-state">
+                Failed to load telemetry history.
+            </div>
+        `;
+
+    }
+}
+
+
+// ======================================================
+// HISTORY - FORMAT TIMESTAMP
+// ======================================================
+
+function formatTelemetryTimestamp(timestamp) {
+
+    if (!timestamp) {
+        return "N/A";
+    }
+
+    const date =
+        new Date(timestamp);
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+
+        return String(timestamp);
+
+    }
+
+    return date.toLocaleString(
+        "en-IN",
+        {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+        }
+    );
+}
+// ======================================================
+// PAGE NAVIGATION
+// ======================================================
+
+function showPage(pageName) {
+
+    const pages = document.querySelectorAll(
+        ".page-content"
+    );
+
+    const navItems = document.querySelectorAll(
+        ".nav-item[data-page]"
+    );
+
+    // Hide all pages
+    pages.forEach(page => {
+        page.classList.add("hidden");
+    });
+
+    // Remove active state from navigation
+    navItems.forEach(item => {
+        item.classList.remove("active");
+    });
+
+    // Show selected page
+    const selectedPage = document.getElementById(
+        `page-${pageName}`
+    );
+
+    if (selectedPage) {
+        selectedPage.classList.remove("hidden");
+    }
+
+    // Activate selected navigation button
+    const selectedNav = document.querySelector(
+        `.nav-item[data-page="${pageName}"]`
+    );
+
+    if (selectedNav) {
+        selectedNav.classList.add("active");
+    }
+
+    // ==================================================
+    // TOP BAR
+    // ==================================================
+
+    const titles = {
+        dashboard: "Dashboard",
+        trackers: "Tracker Management",
+        map: "Live Map",
+        alerts: "Safety Alerts",
+        history: "Telemetry History"
+    };
+
+    const descriptions = {
+        dashboard:
+            "Real-time safety monitoring",
+
+        trackers:
+            "Monitor all registered IoT safety trackers.",
+
+        map:
+            "Real-time location of all active trackers.",
+
+        alerts:
+            "Monitor active and historical safety events.",
+
+        history:
+            "Historical GPS and tracker telemetry data."
+    };
+
+    const titleElement = document.querySelector(
+        ".topbar h2"
+    );
+
+    const descriptionElement = document.querySelector(
+        ".topbar p"
+    );
+
+    if (titleElement) {
+        titleElement.textContent =
+            titles[pageName] || "Dashboard";
+    }
+
+    if (descriptionElement) {
+        descriptionElement.textContent =
+            descriptions[pageName] ||
+            "Real-time safety monitoring";
+    }
+
+    // ==================================================
+    // TRACKERS PAGE
+    // ==================================================
+
+    if (pageName === "trackers") {
+
+        loadTrackers();
+
+        setTimeout(() => {
+
+            // loadTrackers() already fetches the
+            // tracker data. This ensures the
+            // management page gets populated.
+
+            const managementContainer =
+                document.getElementById(
+                    "tracker-management-list"
+                );
+
+            if (
+                managementContainer &&
+                window.lastTrackers
+            ) {
+                displayTrackerManagement(
+                    window.lastTrackers
+                );
+            }
+
+        }, 100);
+    }
+
+    // ==================================================
+    // LIVE MAP PAGE
+    // ==================================================
+
+    if (pageName === "map") {
+
+        initializeFullMap();
+
+        setTimeout(() => {
+
+            if (fullMap) {
+                fullMap.invalidateSize();
+            }
+
+            loadTrackers();
+
+        }, 300);
+    }
+
+    // ==================================================
+    // ALERTS PAGE
+    // ==================================================
+
+    if (pageName === "alerts") {
+
+        loadAlerts();
+
+        setTimeout(() => {
+
+            const alertsContainer =
+                document.getElementById(
+                    "all-alerts-list"
+                );
+
+            if (
+                alertsContainer &&
+                window.lastAlerts
+            ) {
+                displayAllAlerts(
+                    window.lastAlerts
+                );
+            }
+
+        }, 100);
+    }
+
+    // ==================================================
+    // HISTORY PAGE
+    // ==================================================
+
+    if (pageName === "history") {
+
+        loadHistoryTrackers();
+    }
+}
+
+// ======================================================
+// NAVIGATION EVENTS
+// ======================================================
+
+function initializeNavigation() {
+
+    const navItems =
+        document.querySelectorAll(
+            ".nav-item[data-page]"
+        );
+
+    navItems.forEach(
+        button => {
+
+            button.addEventListener(
+                "click",
+                () => {
+
+                    const page =
+                        button.dataset.page;
+
+                    if (page) {
+
+                        showPage(
+                            page
+                        );
+                    }
+                }
+            );
+        }
+    );
+}
+
+
+// ======================================================
+// INITIALIZE APPLICATION
+// ======================================================
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+
+        // Initialize navigation
+        initializeNavigation();
+
+
+        // Initialize dashboard map
+        initializeMap();
+
+
+        // Load initial data
+        loadTrackers();
+
+        loadAlerts();
+
+
+        // ==================================================
+        // AUTO REFRESH
+        // ==================================================
+
+        setInterval(
+            () => {
+
+                loadTrackers();
+
+            },
+            10000
+        );
+
+
+        setInterval(
+            () => {
+
+                loadAlerts();
+
+            },
+            10000
+        );
+
+    }
+);

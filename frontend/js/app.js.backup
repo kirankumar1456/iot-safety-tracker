@@ -1,0 +1,517 @@
+const API_BASE = "/api";
+
+let map;
+let markers = {};
+
+
+// ======================================================
+// INITIALIZE MAP
+// ======================================================
+
+function initializeMap() {
+
+    map = L.map("map").setView(
+        [22.3072, 73.1812],
+        13
+    );
+
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution:
+                "&copy; OpenStreetMap contributors"
+        }
+    ).addTo(map);
+}
+
+
+// ======================================================
+// LOAD TRACKERS
+// ======================================================
+
+async function loadTrackers() {
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE}/trackers`
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Failed to load trackers"
+            );
+        }
+
+        const trackers = await response.json();
+
+        updateTrackerStats(trackers);
+
+        displayTrackers(trackers);
+
+        updateMap(trackers);
+
+    } catch (error) {
+
+        console.error(
+            "Tracker loading error:",
+            error
+        );
+    }
+}
+
+
+// ======================================================
+// UPDATE STATISTICS
+// ======================================================
+
+function updateTrackerStats(trackers) {
+
+    const total = trackers.length;
+
+    const online = trackers.filter(
+        tracker => tracker.status === "online"
+    ).length;
+
+    const batteries = trackers
+        .map(tracker => Number(tracker.battery))
+        .filter(
+            battery => !Number.isNaN(battery)
+        );
+
+    let averageBattery = 0;
+
+    if (batteries.length > 0) {
+
+        averageBattery =
+            batteries.reduce(
+                (sum, battery) => sum + battery,
+                0
+            ) / batteries.length;
+    }
+
+    document.getElementById(
+        "total-trackers"
+    ).textContent = total;
+
+    document.getElementById(
+        "online-trackers"
+    ).textContent = online;
+
+    document.getElementById(
+        "average-battery"
+    ).textContent =
+        `${Math.round(averageBattery)}%`;
+}
+
+
+// ======================================================
+// DISPLAY TRACKERS
+// ======================================================
+
+function displayTrackers(trackers) {
+
+    const container =
+        document.getElementById("tracker-list");
+
+    if (trackers.length === 0) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No trackers available
+            </div>
+        `;
+
+        return;
+    }
+
+    container.innerHTML = "";
+
+    trackers.forEach(tracker => {
+
+        const item =
+            document.createElement("div");
+
+        item.className = "tracker-item";
+
+        item.innerHTML = `
+            <div class="tracker-name">
+
+                <strong>
+                    ${escapeHtml(tracker.name)}
+                </strong>
+
+                <span>
+                    ${
+                        tracker.status === "online"
+                            ? "🟢"
+                            : "⚪"
+                    }
+                </span>
+
+            </div>
+
+            <div class="tracker-device">
+                ${escapeHtml(tracker.device_id)}
+            </div>
+
+            <div class="tracker-status">
+
+                <div class="status-item">
+
+                    <span>Battery</span>
+
+                    <strong>
+                        ${tracker.battery ?? 0}%
+                    </strong>
+
+                </div>
+
+                <div class="status-item">
+
+                    <span>GPS</span>
+
+                    <strong>
+                        ${escapeHtml(
+                            tracker.gps_status || "unknown"
+                        )}
+                    </strong>
+
+                </div>
+
+                <div class="status-item">
+
+                    <span>Network</span>
+
+                    <strong>
+                        ${escapeHtml(
+                            tracker.wifi_status || "unknown"
+                        )}
+                    </strong>
+
+                </div>
+
+                <div class="status-item">
+
+                    <span>Assigned</span>
+
+                    <strong>
+                        ${escapeHtml(
+                            tracker.assigned_person ||
+                            "Unassigned"
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+        `;
+
+        container.appendChild(item);
+    });
+}
+
+
+// ======================================================
+// UPDATE MAP
+// ======================================================
+
+async function updateMap(trackers) {
+
+    if (!map) {
+        return;
+    }
+
+    let firstLocation = null;
+
+    for (const tracker of trackers) {
+
+        try {
+
+            const response = await fetch(
+                `${API_BASE}/telemetry/${encodeURIComponent(
+                    tracker.device_id
+                )}`
+            );
+
+            if (!response.ok) {
+                continue;
+            }
+
+            const telemetry =
+                await response.json();
+
+            if (
+                !telemetry ||
+                telemetry.length === 0
+            ) {
+                continue;
+            }
+
+            const latest = telemetry[0];
+
+            if (
+                latest.latitude === null ||
+                latest.longitude === null ||
+                latest.latitude === undefined ||
+                latest.longitude === undefined
+            ) {
+                continue;
+            }
+
+            const latitude =
+                Number(latest.latitude);
+
+            const longitude =
+                Number(latest.longitude);
+
+            if (
+                Number.isNaN(latitude) ||
+                Number.isNaN(longitude)
+            ) {
+                continue;
+            }
+
+            if (!firstLocation) {
+                firstLocation = [
+                    latitude,
+                    longitude
+                ];
+            }
+
+            const popup = `
+                <strong>
+                    ${escapeHtml(tracker.name)}
+                </strong>
+                <br>
+                Device:
+                ${escapeHtml(tracker.device_id)}
+                <br>
+                Battery:
+                ${tracker.battery ?? 0}%
+                <br>
+                GPS:
+                ${escapeHtml(
+                    tracker.gps_status || "unknown"
+                )}
+            `;
+
+            if (markers[tracker.device_id]) {
+
+                markers[
+                    tracker.device_id
+                ].setLatLng([
+                    latitude,
+                    longitude
+                ]);
+
+                markers[
+                    tracker.device_id
+                ].bindPopup(popup);
+
+            } else {
+
+                markers[
+                    tracker.device_id
+                ] = L.marker([
+                    latitude,
+                    longitude
+                ])
+                .addTo(map)
+                .bindPopup(popup);
+            }
+
+        } catch (error) {
+
+            console.error(
+                `Map telemetry error for ${tracker.device_id}:`,
+                error
+            );
+        }
+    }
+
+    if (firstLocation) {
+
+        map.setView(
+            firstLocation,
+            15
+        );
+    }
+}
+
+
+// ======================================================
+// LOAD ALERTS
+// ======================================================
+
+async function loadAlerts() {
+
+    try {
+
+        const response = await fetch(
+            `${API_BASE}/alerts`
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Failed to load alerts"
+            );
+        }
+
+        const alerts = await response.json();
+
+        displayAlerts(alerts);
+
+        updateAlertCount(alerts);
+
+    } catch (error) {
+
+        console.error(
+            "Alert loading error:",
+            error
+        );
+    }
+}
+
+
+// ======================================================
+// DISPLAY ALERTS
+// ======================================================
+
+function displayAlerts(alerts) {
+
+    const container =
+        document.getElementById("alerts-list");
+
+    if (alerts.length === 0) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No alerts
+            </div>
+        `;
+
+        return;
+    }
+
+    container.innerHTML = "";
+
+    alerts.slice(0, 10).forEach(alert => {
+
+        const item =
+            document.createElement("div");
+
+        item.className = "alert-item";
+
+        const resolvedClass =
+            alert.status === "resolved"
+                ? "resolved"
+                : "";
+
+        item.innerHTML = `
+
+            <div class="alert-info">
+
+                <div class="alert-icon-small">
+                    ⚠
+                </div>
+
+                <div>
+
+                    <div class="alert-title">
+                        ${escapeHtml(
+                            alert.alert_type
+                        )}
+                    </div>
+
+                    <div class="alert-description">
+                        ${escapeHtml(
+                            alert.message
+                        )}
+                        —
+                        ${escapeHtml(
+                            alert.device_id
+                        )}
+                    </div>
+
+                </div>
+
+            </div>
+
+            <span class="alert-status ${resolvedClass}">
+                ${escapeHtml(alert.status)}
+            </span>
+        `;
+
+        container.appendChild(item);
+    });
+}
+
+
+// ======================================================
+// UPDATE ALERT COUNT
+// ======================================================
+
+function updateAlertCount(alerts) {
+
+    const activeAlerts =
+        alerts.filter(
+            alert => alert.status === "active"
+        ).length;
+
+    document.getElementById(
+        "active-alerts"
+    ).textContent = activeAlerts;
+}
+
+
+// ======================================================
+// HTML ESCAPE
+// ======================================================
+
+function escapeHtml(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+
+// ======================================================
+// INITIALIZE DASHBOARD
+// ======================================================
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+
+        initializeMap();
+
+        loadTrackers();
+
+        loadAlerts();
+
+        // Refresh tracker data every 10 seconds
+        setInterval(
+            loadTrackers,
+            10000
+        );
+
+        // Refresh alerts every 10 seconds
+        setInterval(
+            loadAlerts,
+            10000
+        );
+    }
+);

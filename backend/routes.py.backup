@@ -1,0 +1,710 @@
+from datetime import datetime, timezone
+
+from flask import Blueprint, jsonify, request
+
+from backend.extensions import db
+from backend.models import Tracker, Telemetry, Alert
+
+
+api = Blueprint(
+    "api",
+    __name__,
+    url_prefix="/api"
+)
+
+
+# =========================================================
+# HEALTH
+# =========================================================
+
+@api.route("/health", methods=["GET"])
+def health():
+
+    return jsonify({
+        "status": "ok",
+        "service": "iot-safety-tracker"
+    })
+
+
+# =========================================================
+# TRACKERS
+# =========================================================
+
+@api.route("/trackers", methods=["GET"])
+def get_trackers():
+
+    trackers = (
+        Tracker.query
+        .order_by(Tracker.id.asc())
+        .all()
+    )
+
+    return jsonify([
+        tracker.to_dict()
+        for tracker in trackers
+    ])
+
+
+# ---------------------------------------------------------
+# CREATE TRACKER
+# ---------------------------------------------------------
+
+@api.route("/trackers", methods=["POST"])
+def create_tracker():
+
+    data = request.get_json(silent=True)
+
+    if not data:
+        return jsonify({
+            "error": "Request body must contain JSON data"
+        }), 400
+
+    required_fields = [
+        "device_id",
+        "name"
+    ]
+
+    for field in required_fields:
+
+        if not data.get(field):
+
+            return jsonify({
+                "error": f"Missing required field: {field}"
+            }), 400
+
+    device_id = str(
+        data["device_id"]
+    ).strip()
+
+    name = str(
+        data["name"]
+    ).strip()
+
+    if not device_id:
+
+        return jsonify({
+            "error": "device_id cannot be empty"
+        }), 400
+
+    if not name:
+
+        return jsonify({
+            "error": "name cannot be empty"
+        }), 400
+
+    existing_tracker = (
+        Tracker.query
+        .filter_by(
+            device_id=device_id
+        )
+        .first()
+    )
+
+    if existing_tracker:
+
+        return jsonify({
+            "error":
+                "Tracker with this device_id already exists"
+        }), 409
+
+    tracker = Tracker(
+
+        device_id=device_id,
+
+        name=name,
+
+        assigned_person=data.get(
+            "assigned_person"
+        ),
+
+        phone=data.get(
+            "phone"
+        ),
+
+        status=data.get(
+            "status",
+            "offline"
+        ),
+
+        battery=data.get(
+            "battery",
+            0
+        ),
+
+        gps_status=data.get(
+            "gps_status",
+            "unknown"
+        ),
+
+        wifi_status=data.get(
+            "wifi_status",
+            "unknown"
+        )
+    )
+
+    db.session.add(
+        tracker
+    )
+
+    db.session.commit()
+
+    return jsonify(
+        tracker.to_dict()
+    ), 201
+
+
+# ---------------------------------------------------------
+# GET SINGLE TRACKER
+# ---------------------------------------------------------
+
+@api.route(
+    "/trackers/<string:device_id>",
+    methods=["GET"]
+)
+def get_tracker(device_id):
+
+    tracker = (
+        Tracker.query
+        .filter_by(
+            device_id=device_id
+        )
+        .first()
+    )
+
+    if not tracker:
+
+        return jsonify({
+            "error": "Tracker not found"
+        }), 404
+
+    return jsonify(
+        tracker.to_dict()
+    )
+
+
+# ---------------------------------------------------------
+# UPDATE TRACKER
+# ---------------------------------------------------------
+
+@api.route(
+    "/trackers/<string:device_id>",
+    methods=["PUT"]
+)
+def update_tracker(device_id):
+
+    tracker = (
+        Tracker.query
+        .filter_by(
+            device_id=device_id
+        )
+        .first()
+    )
+
+    if not tracker:
+
+        return jsonify({
+            "error": "Tracker not found"
+        }), 404
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Request body must contain JSON data"
+        }), 400
+
+    # -----------------------------------------------------
+    # NAME
+    # -----------------------------------------------------
+
+    if "name" in data:
+
+        name = str(
+            data["name"]
+        ).strip()
+
+        if not name:
+
+            return jsonify({
+                "error":
+                    "name cannot be empty"
+            }), 400
+
+        tracker.name = name
+
+    # -----------------------------------------------------
+    # ASSIGNED PERSON
+    # -----------------------------------------------------
+
+    if "assigned_person" in data:
+
+        tracker.assigned_person = (
+            data["assigned_person"]
+        )
+
+    # -----------------------------------------------------
+    # PHONE
+    # -----------------------------------------------------
+
+    if "phone" in data:
+
+        tracker.phone = data["phone"]
+
+    # -----------------------------------------------------
+    # STATUS
+    # -----------------------------------------------------
+
+    if "status" in data:
+
+        allowed_statuses = [
+            "online",
+            "offline"
+        ]
+
+        if data["status"] not in allowed_statuses:
+
+            return jsonify({
+                "error":
+                    "Invalid tracker status"
+            }), 400
+
+        tracker.status = data["status"]
+
+    # -----------------------------------------------------
+    # BATTERY
+    # -----------------------------------------------------
+
+    if "battery" in data:
+
+        try:
+
+            battery = float(
+                data["battery"]
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            return jsonify({
+                "error":
+                    "Battery must be a number"
+            }), 400
+
+        if battery < 0 or battery > 100:
+
+            return jsonify({
+                "error":
+                    "Battery must be between 0 and 100"
+            }), 400
+
+        tracker.battery = battery
+
+    # -----------------------------------------------------
+    # GPS STATUS
+    # -----------------------------------------------------
+
+    if "gps_status" in data:
+
+        tracker.gps_status = (
+            data["gps_status"]
+        )
+
+    # -----------------------------------------------------
+    # WIFI STATUS
+    # -----------------------------------------------------
+
+    if "wifi_status" in data:
+
+        tracker.wifi_status = (
+            data["wifi_status"]
+        )
+
+    tracker.updated_at = (
+        datetime.now(timezone.utc)
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        "message":
+            "Tracker updated successfully",
+
+        "tracker":
+            tracker.to_dict()
+    })
+
+
+# ---------------------------------------------------------
+# DELETE TRACKER
+# ---------------------------------------------------------
+
+@api.route(
+    "/trackers/<string:device_id>",
+    methods=["DELETE"]
+)
+def delete_tracker(device_id):
+
+    tracker = (
+        Tracker.query
+        .filter_by(
+            device_id=device_id
+        )
+        .first()
+    )
+
+    if not tracker:
+
+        return jsonify({
+            "error": "Tracker not found"
+        }), 404
+
+    # -----------------------------------------------------
+    # Delete telemetry belonging to tracker
+    # -----------------------------------------------------
+
+    Telemetry.query.filter_by(
+        device_id=device_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    # -----------------------------------------------------
+    # Delete alerts belonging to tracker
+    # -----------------------------------------------------
+
+    Alert.query.filter_by(
+        device_id=device_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    # -----------------------------------------------------
+    # Delete tracker
+    # -----------------------------------------------------
+
+    db.session.delete(
+        tracker
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        "message":
+            "Tracker deleted successfully",
+
+        "device_id":
+            device_id
+    })
+
+
+# =========================================================
+# TELEMETRY
+# =========================================================
+
+@api.route(
+    "/telemetry",
+    methods=["POST"]
+)
+def receive_telemetry():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Request body must contain JSON data"
+        }), 400
+
+    if not data.get("device_id"):
+
+        return jsonify({
+            "error":
+                "Missing required field: device_id"
+        }), 400
+
+    device_id = str(
+        data["device_id"]
+    ).strip()
+
+    tracker = (
+        Tracker.query
+        .filter_by(
+            device_id=device_id
+        )
+        .first()
+    )
+
+    if not tracker:
+
+        return jsonify({
+            "error":
+                "Tracker not registered"
+        }), 404
+
+    # -----------------------------------------------------
+    # TELEMETRY OBJECT
+    # -----------------------------------------------------
+
+    telemetry = Telemetry(
+
+        device_id=device_id,
+
+        latitude=data.get(
+            "latitude"
+        ),
+
+        longitude=data.get(
+            "longitude"
+        ),
+
+        accuracy=data.get(
+            "accuracy"
+        ),
+
+        battery=data.get(
+            "battery"
+        ),
+
+        sos=bool(
+            data.get(
+                "sos",
+                False
+            )
+        ),
+
+        gps_status=data.get(
+            "gps_status",
+            "unknown"
+        ),
+
+        wifi_status=data.get(
+            "wifi_status",
+            "unknown"
+        )
+    )
+
+    db.session.add(
+        telemetry
+    )
+
+    # -----------------------------------------------------
+    # UPDATE CURRENT TRACKER STATE
+    # -----------------------------------------------------
+
+    if data.get("battery") is not None:
+
+        try:
+
+            battery = float(
+                data["battery"]
+            )
+
+            if 0 <= battery <= 100:
+
+                tracker.battery = battery
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            pass
+
+    tracker.gps_status = data.get(
+        "gps_status",
+        tracker.gps_status
+    )
+
+    tracker.wifi_status = data.get(
+        "wifi_status",
+        tracker.wifi_status
+    )
+
+    tracker.status = "online"
+
+    tracker.updated_at = (
+        datetime.now(timezone.utc)
+    )
+
+    # -----------------------------------------------------
+    # SOS ALERT
+    # -----------------------------------------------------
+
+    sos_triggered = bool(
+        data.get(
+            "sos",
+            False
+        )
+    )
+
+    if sos_triggered:
+
+        # Check whether an active SOS already exists
+        existing_sos = (
+            Alert.query
+            .filter_by(
+                device_id=device_id,
+                alert_type="SOS",
+                status="active"
+            )
+            .first()
+        )
+
+        # Only create a new alert if there isn't
+        # already an active SOS for this tracker.
+
+        if not existing_sos:
+
+            alert = Alert(
+
+                device_id=device_id,
+
+                alert_type="SOS",
+
+                message=
+                    "SOS button activated",
+
+                latitude=data.get(
+                    "latitude"
+                ),
+
+                longitude=data.get(
+                    "longitude"
+                ),
+
+                status="active"
+            )
+
+            db.session.add(
+                alert
+            )
+
+    # -----------------------------------------------------
+    # COMMIT
+    # -----------------------------------------------------
+
+    db.session.commit()
+
+    return jsonify({
+
+        "message":
+            "Telemetry received successfully",
+
+        "telemetry":
+            telemetry.to_dict()
+
+    }), 201
+
+
+# ---------------------------------------------------------
+# GET TELEMETRY HISTORY
+# ---------------------------------------------------------
+
+@api.route(
+    "/telemetry/<string:device_id>",
+    methods=["GET"]
+)
+def get_telemetry(device_id):
+
+    telemetry_records = (
+
+        Telemetry.query
+
+        .filter_by(
+            device_id=device_id
+        )
+
+        .order_by(
+            Telemetry.timestamp.desc()
+        )
+
+        .all()
+    )
+
+    return jsonify([
+
+        record.to_dict()
+
+        for record in telemetry_records
+
+    ])
+
+
+# =========================================================
+# ALERTS
+# =========================================================
+
+@api.route(
+    "/alerts",
+    methods=["GET"]
+)
+def get_alerts():
+
+    alerts = (
+
+        Alert.query
+
+        .order_by(
+            Alert.created_at.desc()
+        )
+
+        .all()
+    )
+
+    return jsonify([
+
+        alert.to_dict()
+
+        for alert in alerts
+
+    ])
+
+
+# ---------------------------------------------------------
+# RESOLVE ALERT
+# ---------------------------------------------------------
+
+@api.route(
+    "/alerts/<int:alert_id>/resolve",
+    methods=["POST"]
+)
+def resolve_alert(alert_id):
+
+    alert = db.session.get(
+        Alert,
+        alert_id
+    )
+
+    if not alert:
+
+        return jsonify({
+            "error":
+                "Alert not found"
+        }), 404
+
+    alert.status = "resolved"
+
+    alert.resolved_at = (
+        datetime.now(timezone.utc)
+    )
+
+    db.session.commit()
+
+    return jsonify({
+
+        "message":
+            "Alert resolved successfully",
+
+        "alert":
+            alert.to_dict()
+
+    })

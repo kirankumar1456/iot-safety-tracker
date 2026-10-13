@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Safety Tracker Dashboard</title>
+
+    <!-- Leaflet CSS -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <!-- Dashboard CSS -->
+    <link
+        rel="stylesheet"
+        href="/static/css/style.css"
+    >
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- ================= SIDEBAR ================= -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <div class="brand-icon">🛡</div>
+
+            <div>
+                <h1>Safety Tracker</h1>
+                <span>IoT Monitoring</span>
+            </div>
+        </div>
+
+        <nav class="navigation">
+
+            <button class="nav-item active">
+                <span>▣</span>
+                <span>Dashboard</span>
+            </button>
+
+            <button class="nav-item">
+                <span>●</span>
+                <span>Trackers</span>
+            </button>
+
+            <button class="nav-item">
+                <span>⌖</span>
+                <span>Live Map</span>
+            </button>
+
+            <button class="nav-item">
+                <span>⚠</span>
+                <span>Alerts</span>
+            </button>
+
+            <button class="nav-item">
+                <span>◷</span>
+                <span>History</span>
+            </button>
+
+        </nav>
+
+        <div class="sidebar-bottom">
+
+            <button class="nav-item">
+                <span>⚙</span>
+                <span>Settings</span>
+            </button>
+
+        </div>
+
+    </aside>
+
+
+    <!-- ================= MAIN ================= -->
+
+    <main class="main">
+
+        <!-- TOP BAR -->
+
+        <header class="topbar">
+
+            <div>
+                <h2>Dashboard</h2>
+                <p>Real-time safety monitoring</p>
+            </div>
+
+            <div class="system-status">
+                <span class="status-dot"></span>
+                <span>System Online</span>
+            </div>
+
+        </header>
+
+
+        <!-- ================= CONTENT ================= -->
+
+        <section class="content">
+
+            <!-- STAT CARDS -->
+
+            <div class="stats-grid">
+
+                <div class="stat-card">
+
+                    <div class="stat-icon tracker-icon">
+                        ●
+                    </div>
+
+                    <div>
+                        <span class="stat-label">
+                            Total Trackers
+                        </span>
+
+                        <strong id="total-trackers">
+                            0
+                        </strong>
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-icon online-icon">
+                        ●
+                    </div>
+
+                    <div>
+                        <span class="stat-label">
+                            Online
+                        </span>
+
+                        <strong id="online-trackers">
+                            0
+                        </strong>
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-icon alert-icon">
+                        ⚠
+                    </div>
+
+                    <div>
+                        <span class="stat-label">
+                            Active Alerts
+                        </span>
+
+                        <strong id="active-alerts">
+                            0
+                        </strong>
+                    </div>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-icon battery-icon">
+                        ▰
+                    </div>
+
+                    <div>
+                        <span class="stat-label">
+                            Avg. Battery
+                        </span>
+
+                        <strong id="average-battery">
+                            0%
+                        </strong>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- MAP + TRACKER -->
+
+            <div class="dashboard-grid">
+
+                <!-- MAP -->
+
+                <section class="panel map-panel">
+
+                    <div class="panel-header">
+
+                        <div>
+                            <h3>Live Location</h3>
+                            <span>
+                                Real-time tracker positions
+                            </span>
+                        </div>
+
+                        <span class="live-badge">
+                            LIVE
+                        </span>
+
+                    </div>
+
+                    <div id="map"></div>
+
+                </section>
+
+
+                <!-- TRACKER DETAILS -->
+
+                <section class="panel tracker-panel">
+
+                    <div class="panel-header">
+
+                        <div>
+                            <h3>Tracker Status</h3>
+                            <span>
+                                Current device information
+                            </span>
+                        </div>
+
+                    </div>
+
+                    <div id="tracker-list">
+
+                        <div class="empty-state">
+                            No trackers available
+                        </div>
+
+                    </div>
+
+                </section>
+
+            </div>
+
+
+            <!-- ALERTS -->
+
+            <section class="panel alerts-panel">
+
+                <div class="panel-header">
+
+                    <div>
+                        <h3>Recent Alerts</h3>
+                        <span>
+                            Latest safety events
+                        </span>
+                    </div>
+
+                    <button
+                        class="refresh-button"
+                        onclick="loadAlerts()"
+                    >
+                        Refresh
+                    </button>
+
+                </div>
+
+                <div id="alerts-list">
+
+                    <div class="empty-state">
+                        No alerts
+                    </div>
+
+                </div>
+
+            </section>
+
+        </section>
+
+    </main>
+
+</div>
+
+
+<!-- Leaflet JavaScript -->
+
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
+
+<!-- Dashboard JavaScript -->
+
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>
