@@ -30,7 +30,7 @@ An IoT safety tracking dashboard and telemetry backend with real-time GPS tracki
 git add .
 git commit -m "Initial commit for Vercel deployment"
 git branch -M main
-git remote add origin https://github.com/<your-username>/iot-safety-tracker.git
+git remote add origin https://github.com/kirankumar1456/iot-safety-tracker.git
 git push -u origin main
 ```
 
